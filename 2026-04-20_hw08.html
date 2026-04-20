@@ -1505,16 +1505,24 @@ border-radius: 0px;
 </div>
 
 
+<p>The R project is on GitHub: <a href="https://github.com/ChrisW12372/2026-04-20_p8131-hw08.git" class="uri">https://github.com/ChrisW12372/2026-04-20_p8131-hw08.git</a></p>
 <div id="read-the-data" class="section level1" number="1">
 <h1><span class="header-section-number">1</span> Read the Data</h1>
 <pre class="r"><code>library(readxl)
 library(tidyverse)
 library(lmerTest)
 library(broom.mixed)
+library(geepack)
 
 df_health &lt;- read_excel(&quot;data/HW8-HEALTH.xlsx&quot;) |&gt;
   janitor::clean_names() |&gt;
-  mutate(time = factor(time))</code></pre>
+  mutate(
+    id = factor(id),
+    time = factor(time),
+    txt = factor(txt),
+    health = factor(health),
+    agegroup = factor(agegroup)
+    )</code></pre>
 </div>
 <div id="question-a" class="section level1" number="2">
 <h1><span class="header-section-number">2</span> Question a</h1>
@@ -1579,6 +1587,138 @@ reasonably comparable with respect to baseline health self-rating, which
 is consistent with what we would expect from a randomized trial.
 Therefore, any differences observed during follow-up are less likely to
 be explained by baseline imbalance in this variable.</p></li>
+</ul>
+</div>
+</div>
+<div id="question-b" class="section level1" number="3">
+<h1><span class="header-section-number">3</span> Question b</h1>
+<div id="some-preliminary-procedures" class="section level2" number="3.1">
+<h2><span class="header-section-number">3.1</span> Some Preliminary
+Procedures</h2>
+<pre class="r"><code>df_baseline &lt;- df_baseline |&gt;
+  select(id, baseline_health = health)
+
+df_followup &lt;- df_health |&gt;
+  filter(time != &quot;1&quot;)
+
+df_gee &lt;- df_followup |&gt;
+  left_join(df_baseline, by = &quot;id&quot;) |&gt;
+  mutate(
+    health_bin = if_else(health == &quot;Good&quot;, 1, 0),
+    baseline_bin = if_else(baseline_health == &quot;Good&quot;, 1, 0),
+    txt = relevel(txt, ref = &quot;Control&quot;),
+    time = factor(time, levels = c(&quot;2&quot;, &quot;3&quot;, &quot;4&quot;)),
+    agegroup = relevel(agegroup, ref = &quot;15-24&quot;)
+  )</code></pre>
+</div>
+<div id="fit-the-gee-models" class="section level2" number="3.2">
+<h2><span class="header-section-number">3.2</span> Fit the GEE
+Models</h2>
+<pre class="r"><code>fit_gee &lt;- geeglm(
+  health_bin ~ baseline_bin + txt + time + agegroup, id = id,
+  data = df_gee, 
+  family = binomial(link = &quot;logit&quot;),
+  corstr = &quot;unstructured&quot;
+)
+
+summary(fit_gee)</code></pre>
+<pre><code>## 
+## Call:
+## geeglm(formula = health_bin ~ baseline_bin + txt + time + agegroup, 
+##     family = binomial(link = &quot;logit&quot;), data = df_gee, id = id, 
+##     corstr = &quot;unstructured&quot;)
+## 
+##  Coefficients:
+##                 Estimate Std.err   Wald Pr(&gt;|W|)    
+## (Intercept)      -1.6466  0.4607 12.772 0.000352 ***
+## baseline_bin      1.7632  0.5290 11.107 0.000860 ***
+## txtIntervention   1.9101  0.5397 12.527 0.000401 ***
+## time3             0.2729  0.3398  0.645 0.421942    
+## time4             0.3042  0.4400  0.478 0.489248    
+## agegroup25-34     1.6503  0.5216 10.009 0.001558 ** 
+## agegroup35+       1.0023  0.9054  1.226 0.268255    
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
+## 
+## Correlation structure = unstructured 
+## Estimated Scale Parameters:
+## 
+##             Estimate Std.err
+## (Intercept)     1.41   2.921
+##   Link = identity 
+## 
+## Estimated Correlation Parameters:
+##           Estimate Std.err
+## alpha.1:2   0.1812  0.5469
+## alpha.1:3   0.8037  1.5683
+## alpha.2:3   0.3231  0.8475
+## Number of clusters:   78  Maximum cluster size: 3</code></pre>
+</div>
+<div id="get-odds-ratios" class="section level2" number="3.3">
+<h2><span class="header-section-number">3.3</span> Get Odds Ratios</h2>
+<pre class="r"><code>coef_gee &lt;- coef(summary(fit_gee))
+
+tab_or_gee &lt;- tibble(
+  term = rownames(coef_gee),
+  estimate = coef_gee[, &quot;Estimate&quot;],
+  se = coef_gee[, &quot;Std.err&quot;],
+  p_value = coef_gee[, &quot;Pr(&gt;|W|)&quot;]
+) |&gt;
+  mutate(
+    OR = exp(estimate),
+    lower_95 = exp(estimate - 1.96 * se),
+    upper_95 = exp(estimate + 1.96 * se)
+  )
+
+tab_or_gee</code></pre>
+<pre><code>## # A tibble: 7 × 7
+##   term            estimate    se  p_value    OR lower_95 upper_95
+##   &lt;chr&gt;              &lt;dbl&gt; &lt;dbl&gt;    &lt;dbl&gt; &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;
+## 1 (Intercept)       -1.65  0.461 0.000352 0.193   0.0781    0.475
+## 2 baseline_bin       1.76  0.529 0.000860 5.83    2.07     16.4  
+## 3 txtIntervention    1.91  0.540 0.000401 6.75    2.35     19.5  
+## 4 time3              0.273 0.340 0.422    1.31    0.675     2.56 
+## 5 time4              0.304 0.440 0.489    1.36    0.572     3.21 
+## 6 agegroup25-34      1.65  0.522 0.00156  5.21    1.87     14.5  
+## 7 agegroup35+        1.00  0.905 0.268    2.72    0.462    16.1</code></pre>
+<ul>
+<li><p>A logistic GEE model with an unstructured working correlation
+matrix was fit to the repeated follow-up observations, excluding the
+randomization visit. The outcome was participants’ self-rated health
+during follow-up, and the predictors were baseline health status,
+treatment group, follow-up visit and age group. This model accounts for
+the correlation among repeated observations from the same
+participant.</p></li>
+<li><p>Baseline health was a strong predictor of follow-up self-rated
+health. After adjustment for treatment group, follow-up visit, and age
+group, participants who reported good health at baseline had
+significantly higher odds of reporting good health during follow-up than
+those who reported poor health at baseline (OR = 5.83, 95% CI:
+2.07–16.45, p &lt; 0.001).</p></li>
+<li><p>Treatment group was also significantly associated with follow-up
+health. Participants in the intervention group had substantially higher
+odds of reporting good health during follow-up than those in the control
+group (OR = 6.75, 95% CI: 2.35–19.45, p &lt; 0.001), after controlling
+for baseline health, follow-up visit, and age group.</p></li>
+<li><p>There was no statistically significant evidence that self-rated
+health differed across follow-up visits. Relative to
+<code>time = 2</code>, the odds of reporting good health were not
+significantly different at <code>time = 3</code> (OR = 1.31, 95% CI:
+0.67–2.56, p = 0.422) or <code>time = 4</code> (OR = 1.36, 95% CI:
+0.57–3.21, p = 0.489).</p></li>
+<li><p>Age group was partially associated with follow-up health.
+Compared with participants aged 15–24 years, those aged 25–34 years had
+significantly higher odds of reporting good health during follow-up (OR
+= 5.21, 95% CI: 1.87–14.48, p = 0.002). The estimated odds were also
+higher for participants aged 35 years and older, but this difference was
+not statistically significant (OR = 2.72, 95% CI: 0.46–16.07, p =
+0.268).</p></li>
+<li><p>Overall, these results suggest that follow-up self-rated health
+was strongly associated with baseline health and treatment assignment,
+while there was no clear evidence of a significant difference across
+follow-up visits. The results also suggest a higher likelihood of good
+self-rated health among participants aged 25–34 years compared with
+those aged 15–24 years.</p></li>
 </ul>
 </div>
 </div>

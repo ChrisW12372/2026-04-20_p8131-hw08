@@ -11,6 +11,7 @@ output:
     css: style.css
 ---
 
+The R project is on GitHub: https://github.com/ChrisW12372/2026-04-20_p8131-hw08.git
 
 # Read the Data
 
@@ -19,10 +20,17 @@ library(readxl)
 library(tidyverse)
 library(lmerTest)
 library(broom.mixed)
+library(geepack)
 
 df_health <- read_excel("data/HW8-HEALTH.xlsx") |>
   janitor::clean_names() |>
-  mutate(time = factor(time))
+  mutate(
+    id = factor(id),
+    time = factor(time),
+    txt = factor(txt),
+    health = factor(health),
+    agegroup = factor(agegroup)
+    )
 ```
 
 
@@ -60,13 +68,75 @@ fisher.test(tab_baseline)
 * These findings suggest that the two randomized groups were reasonably comparable with respect to baseline health self-rating, which is consistent with what we would expect from a randomized trial. Therefore, any differences observed during follow-up are less likely to be explained by baseline imbalance in this variable.  
 
 
+# Question b
+
+## Some Preliminary Procedures
+
+```{r}
+df_baseline <- df_baseline |>
+  select(id, baseline_health = health)
+
+df_followup <- df_health |>
+  filter(time != "1")
+
+df_gee <- df_followup |>
+  left_join(df_baseline, by = "id") |>
+  mutate(
+    health_bin = if_else(health == "Good", 1, 0),
+    baseline_bin = if_else(baseline_health == "Good", 1, 0),
+    txt = relevel(txt, ref = "Control"),
+    time = factor(time, levels = c("2", "3", "4")),
+    agegroup = relevel(agegroup, ref = "15-24")
+  )
+```
 
 
+## Fit the GEE Models
+
+```{r}
+fit_gee <- geeglm(
+  health_bin ~ baseline_bin + txt + time + agegroup, id = id,
+  data = df_gee, 
+  family = binomial(link = "logit"),
+  corstr = "unstructured"
+)
+
+summary(fit_gee)
+```
 
 
+## Get Odds Ratios
+
+```{r}
+coef_gee <- coef(summary(fit_gee))
+
+tab_or_gee <- tibble(
+  term = rownames(coef_gee),
+  estimate = coef_gee[, "Estimate"],
+  se = coef_gee[, "Std.err"],
+  p_value = coef_gee[, "Pr(>|W|)"]
+) |>
+  mutate(
+    OR = exp(estimate),
+    lower_95 = exp(estimate - 1.96 * se),
+    upper_95 = exp(estimate + 1.96 * se)
+  )
+
+tab_or_gee
+```
 
 
+* A logistic GEE model with an unstructured working correlation matrix was fit to the repeated follow-up observations, excluding the randomization visit. The outcome was participants’ self-rated health during follow-up, and the predictors were baseline health status, treatment group, follow-up visit and age group. This model accounts for the correlation among repeated observations from the same participant.  
 
+* Baseline health was a strong predictor of follow-up self-rated health. After adjustment for treatment group, follow-up visit, and age group, participants who reported good health at baseline had significantly higher odds of reporting good health during follow-up than those who reported poor health at baseline (OR = 5.83, 95% CI: 2.07–16.45, p < 0.001).   
+
+* Treatment group was also significantly associated with follow-up health. Participants in the intervention group had substantially higher odds of reporting good health during follow-up than those in the control group (OR = 6.75, 95% CI: 2.35–19.45, p < 0.001), after controlling for baseline health, follow-up visit, and age group.  
+
+* There was no statistically significant evidence that self-rated health differed across follow-up visits. Relative to `time = 2`, the odds of reporting good health were not significantly different at `time = 3` (OR = 1.31, 95% CI: 0.67–2.56, p = 0.422) or `time = 4` (OR = 1.36, 95% CI: 0.57–3.21, p = 0.489).  
+
+* Age group was partially associated with follow-up health. Compared with participants aged 15–24 years, those aged 25–34 years had significantly higher odds of reporting good health during follow-up (OR = 5.21, 95% CI: 1.87–14.48, p = 0.002). The estimated odds were also higher for participants aged 35 years and older, but this difference was not statistically significant (OR = 2.72, 95% CI: 0.46–16.07, p = 0.268).  
+
+* Overall, these results suggest that follow-up self-rated health was strongly associated with baseline health and treatment assignment, while there was no clear evidence of a significant difference across follow-up visits. The results also suggest a higher likelihood of good self-rated health among participants aged 25–34 years compared with those aged 15–24 years.  
 
 
 
