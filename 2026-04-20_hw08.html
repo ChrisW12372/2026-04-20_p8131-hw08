@@ -1510,9 +1510,9 @@ border-radius: 0px;
 <h1><span class="header-section-number">1</span> Read the Data</h1>
 <pre class="r"><code>library(readxl)
 library(tidyverse)
-library(lmerTest)
 library(broom.mixed)
 library(geepack)
+library(lme4)
 
 df_health &lt;- read_excel(&quot;data/HW8-HEALTH.xlsx&quot;) |&gt;
   janitor::clean_names() |&gt;
@@ -1721,6 +1721,127 @@ self-rated health among participants aged 25–34 years compared with
 those aged 15–24 years.</p></li>
 </ul>
 </div>
+</div>
+<div id="question-c" class="section level1" number="4">
+<h1><span class="header-section-number">4</span> Question c</h1>
+<pre class="r"><code>fit_glmm &lt;- glmer(
+  health_bin ~ baseline_bin + txt + time + agegroup + (1 | id),
+  data = df_gee,
+  family = binomial(link = &quot;logit&quot;)
+)
+
+summary(fit_glmm)</code></pre>
+<pre><code>## Generalized linear mixed model fit by maximum likelihood (Laplace
+##   Approximation) [glmerMod]
+##  Family: binomial  ( logit )
+## Formula: health_bin ~ baseline_bin + txt + time + agegroup + (1 | id)
+##    Data: df_gee
+## 
+##       AIC       BIC    logLik -2*log(L)  df.resid 
+##     186.5     212.9     -85.3     170.5       191 
+## 
+## Scaled residuals: 
+##    Min     1Q Median     3Q    Max 
+## -2.448 -0.230  0.144  0.276  1.935 
+## 
+## Random effects:
+##  Groups Name        Variance Std.Dev.
+##  id     (Intercept) 5.87     2.42    
+## Number of obs: 199, groups:  id, 78
+## 
+## Fixed effects:
+##                 Estimate Std. Error z value Pr(&gt;|z|)   
+## (Intercept)       -2.614      1.023   -2.56   0.0106 * 
+## baseline_bin       2.808      0.999    2.81   0.0049 **
+## txtIntervention    3.454      1.092    3.16   0.0016 **
+## time3              0.439      0.559    0.78   0.4325   
+## time4              0.355      0.621    0.57   0.5681   
+## agegroup25-34      2.278      1.025    2.22   0.0262 * 
+## agegroup35+        1.988      1.396    1.42   0.1545   
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
+## 
+## Correlation of Fixed Effects:
+##             (Intr) bsln_b txtInt time3  time4  a25-34
+## baseline_bn -0.671                                   
+## txtIntrvntn -0.673  0.456                            
+## time3       -0.320  0.089  0.114                     
+## time4       -0.230  0.023  0.057  0.420              
+## agegrp25-34 -0.661  0.386  0.402  0.067  0.015       
+## agegroup35+ -0.445  0.277  0.209  0.021 -0.004  0.392</code></pre>
+<pre class="r"><code>beta &lt;- fixef(fit_glmm)
+se &lt;- sqrt(diag(vcov(fit_glmm)))
+
+tab_or_glmm &lt;- tibble(
+  term = names(beta),
+  estimate = beta,
+  se = se,
+  OR = exp(beta),
+  lower_95 = exp(beta - 1.96 * se),
+  upper_95 = exp(beta + 1.96 * se)
+)
+
+tab_or_glmm</code></pre>
+<pre><code>## # A tibble: 7 × 6
+##   term            estimate    se      OR lower_95 upper_95
+##   &lt;chr&gt;              &lt;dbl&gt; &lt;dbl&gt;   &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;
+## 1 (Intercept)       -2.61  1.02   0.0732  0.00987    0.544
+## 2 baseline_bin       2.81  0.999 16.6     2.34     118.   
+## 3 txtIntervention    3.45  1.09  31.6     3.72     269.   
+## 4 time3              0.439 0.559  1.55    0.518      4.64 
+## 5 time4              0.355 0.621  1.43    0.422      4.82 
+## 6 agegroup25-34      2.28  1.02   9.76    1.31      72.7  
+## 7 agegroup35+        1.99  1.40   7.30    0.473    113.</code></pre>
+<ul>
+<li><p>A logistic generalized linear mixed-effects model with a
+subject-specific random intercept was fit to the follow-up observations.
+The outcome was follow-up self-rated health, and the predictors were
+baseline health, treatment group, follow-up visit (<code>time</code>),
+and age group. The subject-specific random intercept was included to
+account for the correlation among repeated observations from the same
+participant and to allow individuals to differ in their underlying
+propensity to report good health.</p></li>
+<li><p>Baseline health was a strong predictor of follow-up self-rated
+health. After controlling for treatment group, follow-up visit, age
+group, and the participant-specific random intercept, participants with
+good baseline health had substantially higher odds of reporting good
+health during follow-up than those with poor baseline health (OR =
+16.58, 95% CI: 2.34–117.52, p = 0.0049). Treatment group was also
+significantly associated with follow-up health. Participants in the
+intervention group had much higher odds of reporting good health during
+follow-up than those in the control group (OR = 31.63, 95% CI:
+3.72–268.90, p = 0.0016), conditional on the same random intercept and
+the other covariates.</p></li>
+<li><p>There was no statistically significant evidence that follow-up
+self-rated health differed across visits. Relative to
+<code>time = 2</code>, the odds of reporting good health were not
+significantly different at <code>time = 3</code> (OR = 1.55, 95% CI:
+0.52–4.64, p = 0.433) or <code>time = 4</code> (OR = 1.43, 95% CI:
+0.42–4.82, p = 0.568). Age group was partially associated with the
+outcome. Compared with participants aged 15–24 years, those aged 25–34
+years had significantly higher odds of reporting good health during
+follow-up (OR = 9.76, 95% CI: 1.31–72.74, p = 0.026), whereas the
+difference between participants aged 35+ years and those aged 15–24
+years was not statistically significant (OR = 7.30, 95% CI: 0.47–112.61,
+p = 0.155).</p></li>
+<li><p>The estimated random intercept variance was 5.87, indicating
+substantial between-subject heterogeneity in the propensity to report
+good health, even after adjusting for the observed predictors. This
+supports the inclusion of a subject-specific random intercept.</p></li>
+<li><p>The interpretations of this model differ from those of the GEE
+model because the GLMM provides subject-specific (conditional) effects,
+whereas the GEE provides population-averaged (marginal) effects. Thus,
+the odds ratios from the mixed model describe how predictors are
+associated with the odds of good health for individuals with the same
+random intercept, while the GEE odds ratios describe the average
+association at the population level. In nonlinear models such as
+logistic regression, these two interpretations are not generally the
+same, and the subject-specific odds ratios from the GLMM are often
+further from 1 than the population-averaged odds ratios from the GEE.
+This pattern is seen here, where the estimated GLMM odds ratios are
+larger than the corresponding GEE odds ratios, although the overall
+substantive conclusions are similar across the two approaches.</p></li>
+</ul>
 </div>
 
 

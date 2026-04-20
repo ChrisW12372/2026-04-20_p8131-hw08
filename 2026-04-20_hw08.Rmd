@@ -18,9 +18,9 @@ The R project is on GitHub: https://github.com/ChrisW12372/2026-04-20_p8131-hw08
 ```{r message=FALSE, warning=FALSE}
 library(readxl)
 library(tidyverse)
-library(lmerTest)
 library(broom.mixed)
 library(geepack)
+library(lme4)
 
 df_health <- read_excel("data/HW8-HEALTH.xlsx") |>
   janitor::clean_names() |>
@@ -139,11 +139,45 @@ tab_or_gee
 * Overall, these results suggest that follow-up self-rated health was strongly associated with baseline health and treatment assignment, while there was no clear evidence of a significant difference across follow-up visits. The results also suggest a higher likelihood of good self-rated health among participants aged 25–34 years compared with those aged 15–24 years.  
 
 
+# Question c
+
+```{r}
+fit_glmm <- glmer(
+  health_bin ~ baseline_bin + txt + time + agegroup + (1 | id),
+  data = df_gee,
+  family = binomial(link = "logit")
+)
+
+summary(fit_glmm)
+```
 
 
+```{r}
+beta <- fixef(fit_glmm)
+se <- sqrt(diag(vcov(fit_glmm)))
+
+tab_or_glmm <- tibble(
+  term = names(beta),
+  estimate = beta,
+  se = se,
+  OR = exp(beta),
+  lower_95 = exp(beta - 1.96 * se),
+  upper_95 = exp(beta + 1.96 * se)
+)
+
+tab_or_glmm
+```
 
 
+* A logistic generalized linear mixed-effects model with a subject-specific random intercept was fit to the follow-up observations. The outcome was follow-up self-rated health, and the predictors were baseline health, treatment group, follow-up visit (`time`), and age group. The subject-specific random intercept was included to account for the correlation among repeated observations from the same participant and to allow individuals to differ in their underlying propensity to report good health.  
 
+* Baseline health was a strong predictor of follow-up self-rated health. After controlling for treatment group, follow-up visit, age group, and the participant-specific random intercept, participants with good baseline health had substantially higher odds of reporting good health during follow-up than those with poor baseline health (OR = 16.58, 95% CI: 2.34–117.52, p = 0.0049). Treatment group was also significantly associated with follow-up health. Participants in the intervention group had much higher odds of reporting good health during follow-up than those in the control group (OR = 31.63, 95% CI: 3.72–268.90, p = 0.0016), conditional on the same random intercept and the other covariates.  
+
+* There was no statistically significant evidence that follow-up self-rated health differed across visits. Relative to `time = 2`, the odds of reporting good health were not significantly different at `time = 3` (OR = 1.55, 95% CI: 0.52–4.64, p = 0.433) or `time = 4` (OR = 1.43, 95% CI: 0.42–4.82, p = 0.568). Age group was partially associated with the outcome. Compared with participants aged 15–24 years, those aged 25–34 years had significantly higher odds of reporting good health during follow-up (OR = 9.76, 95% CI: 1.31–72.74, p = 0.026), whereas the difference between participants aged 35+ years and those aged 15–24 years was not statistically significant (OR = 7.30, 95% CI: 0.47–112.61, p = 0.155).  
+
+* The estimated random intercept variance was 5.87, indicating substantial between-subject heterogeneity in the propensity to report good health, even after adjusting for the observed predictors. This supports the inclusion of a subject-specific random intercept.  
+
+* The interpretations of this model differ from those of the GEE model because the GLMM provides subject-specific (conditional) effects, whereas the GEE provides population-averaged (marginal) effects. Thus, the odds ratios from the mixed model describe how predictors are associated with the odds of good health for individuals with the same random intercept, while the GEE odds ratios describe the average association at the population level. In nonlinear models such as logistic regression, these two interpretations are not generally the same, and the subject-specific odds ratios from the GLMM are often further from 1 than the population-averaged odds ratios from the GEE. This pattern is seen here, where the estimated GLMM odds ratios are larger than the corresponding GEE odds ratios, although the overall substantive conclusions are similar across the two approaches.  
 
 
 
