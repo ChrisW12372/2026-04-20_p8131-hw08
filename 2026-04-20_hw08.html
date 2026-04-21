@@ -1512,6 +1512,7 @@ border-radius: 0px;
 library(tidyverse)
 library(broom.mixed)
 library(geepack)
+library(gee)
 library(lme4)
 
 df_health &lt;- read_excel(&quot;data/HW8-HEALTH.xlsx&quot;) |&gt;
@@ -1614,14 +1615,14 @@ df_gee &lt;- df_followup |&gt;
 <div id="fit-the-gee-models" class="section level2" number="3.2">
 <h2><span class="header-section-number">3.2</span> Fit the GEE
 Models</h2>
-<pre class="r"><code>fit_gee &lt;- geeglm(
+<pre class="r"><code>fit_gee1 &lt;- geeglm(
   health_bin ~ baseline_bin + txt + time + agegroup, id = id,
   data = df_gee, 
   family = binomial(link = &quot;logit&quot;),
   corstr = &quot;unstructured&quot;
 )
 
-summary(fit_gee)</code></pre>
+summary(fit_gee1)</code></pre>
 <pre><code>## 
 ## Call:
 ## geeglm(formula = health_bin ~ baseline_bin + txt + time + agegroup, 
@@ -1654,9 +1655,119 @@ summary(fit_gee)</code></pre>
 ## alpha.2:3   0.3231  0.8475
 ## Number of clusters:   78  Maximum cluster size: 3</code></pre>
 </div>
-<div id="get-odds-ratios" class="section level2" number="3.3">
-<h2><span class="header-section-number">3.3</span> Get Odds Ratios</h2>
-<pre class="r"><code>coef_gee &lt;- coef(summary(fit_gee))
+<div id="use-gee-for-model-fitting" class="section level2" number="3.3">
+<h2><span class="header-section-number">3.3</span> Use GEE for Model
+Fitting</h2>
+<pre class="r"><code># We can also use GEE instead of GEEPACKAGE to fit the model. 
+fit_gee2 &lt;- gee(
+  formula = health_bin ~ baseline_bin + txt + time + agegroup,
+  id = id,
+  data = df_gee,
+  family = binomial(link = &quot;logit&quot;),
+  corstr = &quot;unstructured&quot;,
+  scale.fix = TRUE
+)</code></pre>
+<pre><code>## Beginning Cgee S-function, @(#) geeformula.q 4.13 98/01/27</code></pre>
+<pre><code>## running glm to get initial regression estimate</code></pre>
+<pre><code>##     (Intercept)    baseline_bin txtIntervention           time3           time4 
+##         -1.5199          1.7192          2.0043          0.2576          0.2367 
+##   agegroup25-34     agegroup35+ 
+##          1.1969          1.3959</code></pre>
+<pre class="r"><code>summary(fit_gee2)</code></pre>
+<pre><code>## 
+##  GEE:  GENERALIZED LINEAR MODELS FOR DEPENDENT DATA
+##  gee S-function, version 4.13 modified 98/01/27 (1998) 
+## 
+## Model:
+##  Link:                      Logit 
+##  Variance to Mean Relation: Binomial 
+##  Correlation Structure:     Unstructured 
+## 
+## Call:
+## gee(formula = health_bin ~ baseline_bin + txt + time + agegroup, 
+##     id = id, data = df_gee, family = binomial(link = &quot;logit&quot;), 
+##     corstr = &quot;unstructured&quot;, scale.fix = TRUE)
+## 
+## Summary of Residuals:
+##      Min       1Q   Median       3Q      Max 
+## -0.97980 -0.20061  0.09442  0.18345  0.83995 
+## 
+## 
+## Coefficients:
+##                 Estimate Naive S.E. Naive z Robust S.E. Robust z
+## (Intercept)      -1.6579     0.4933 -3.3609      0.4534  -3.6565
+## baseline_bin      1.8164     0.4904  3.7042      0.5113   3.5523
+## txtIntervention   2.1022     0.4883  4.3048      0.5363   3.9200
+## time3             0.2754     0.3893  0.7073      0.3369   0.8174
+## time4             0.2864     0.3349  0.8549      0.4161   0.6881
+## agegroup25-34     1.3346     0.4807  2.7765      0.5044   2.6460
+## agegroup35+       1.4113     0.7988  1.7667      0.7856   1.7965
+## 
+## Estimated Scale Parameter:  1
+## Number of Iterations:  4
+## 
+## Working Correlation
+##        [,1]   [,2]   [,3]
+## [1,] 1.0000 0.1794 0.5602
+## [2,] 0.1794 1.0000 0.2104
+## [3,] 0.5602 0.2104 1.0000</code></pre>
+<pre class="r"><code>coef_gee2 &lt;- summary(fit_gee2)$coefficients
+
+tab_or_gee2 &lt;- tibble(
+  term = rownames(coef_gee2),
+  estimate = coef_gee2[, &quot;Estimate&quot;],
+  se = coef_gee2[, &quot;Robust S.E.&quot;]
+) %&gt;%
+  mutate(
+    z = estimate / se,
+    p_value = 2 * (1 - pnorm(abs(z))),
+    OR = exp(estimate),
+    lower_95 = exp(estimate - 1.96 * se),
+    upper_95 = exp(estimate + 1.96 * se)
+  )
+
+tab_or_gee2</code></pre>
+<pre><code>## # A tibble: 7 × 8
+##   term            estimate    se      z   p_value    OR lower_95 upper_95
+##   &lt;chr&gt;              &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt;     &lt;dbl&gt; &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;
+## 1 (Intercept)       -1.66  0.453 -3.66  0.000256  0.191   0.0784    0.463
+## 2 baseline_bin       1.82  0.511  3.55  0.000382  6.15    2.26     16.8  
+## 3 txtIntervention    2.10  0.536  3.92  0.0000885 8.18    2.86     23.4  
+## 4 time3              0.275 0.337  0.817 0.414     1.32    0.681     2.55 
+## 5 time4              0.286 0.416  0.688 0.491     1.33    0.589     3.01 
+## 6 agegroup25-34      1.33  0.504  2.65  0.00815   3.80    1.41     10.2  
+## 7 agegroup35+        1.41  0.786  1.80  0.0724    4.10    0.879    19.1</code></pre>
+<p>A logistic GEE model with an unstructured working correlation matrix
+was fitted to the follow-up observations, with self-rated health as the
+binary outcome and baseline health, treatment group, follow-up visit
+(time), and age group as predictors. Robust standard errors were used
+for inference.</p>
+<p>Baseline health was a strong predictor of follow-up self-rated
+health. After adjustment for treatment group, follow-up visit, and age
+group, participants who reported good health at baseline had
+substantially higher odds of reporting good health during follow-up than
+those who reported poor health at baseline (estimate = 1.816, OR ≈ 6.15,
+robust z = 3.55).</p>
+<p>Treatment group was also significantly associated with follow-up
+health. Participants in the intervention group had higher odds of
+reporting good health during follow-up than those in the control group
+(estimate = 2.102, OR ≈ 8.18, robust z = 3.92), after controlling for
+the other predictors.</p>
+<p>There was no statistically significant evidence that self-rated
+health differed across follow-up visits. Relative to time = 2, the
+estimated odds of reporting good health were somewhat higher at time = 3
+(OR ≈ 1.32) and time = 4 (OR ≈ 1.33), but neither difference was
+statistically significant.</p>
+<p>Age group was partially associated with follow-up health. Compared
+with participants aged 15–24 years, those aged 25–34 years had
+significantly higher odds of reporting good health during follow-up
+(estimate = 1.335, OR ≈ 3.80, robust z = 2.65). Although the estimated
+odds were also higher for participants aged 35 years and older (OR ≈
+4.10), this effect was not statistically significant.</p>
+</div>
+<div id="get-odds-ratios" class="section level2" number="3.4">
+<h2><span class="header-section-number">3.4</span> Get Odds Ratios</h2>
+<pre class="r"><code>coef_gee &lt;- coef(summary(fit_gee1))
 
 tab_or_gee &lt;- tibble(
   term = rownames(coef_gee),

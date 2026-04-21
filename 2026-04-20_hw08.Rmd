@@ -20,6 +20,7 @@ library(readxl)
 library(tidyverse)
 library(broom.mixed)
 library(geepack)
+library(gee)
 library(lme4)
 
 df_health <- read_excel("data/HW8-HEALTH.xlsx") |>
@@ -94,21 +95,68 @@ df_gee <- df_followup |>
 ## Fit the GEE Models
 
 ```{r}
-fit_gee <- geeglm(
+fit_gee1 <- geeglm(
   health_bin ~ baseline_bin + txt + time + agegroup, id = id,
   data = df_gee, 
   family = binomial(link = "logit"),
   corstr = "unstructured"
 )
 
-summary(fit_gee)
+summary(fit_gee1)
 ```
+
+
+## Use GEE for Model Fitting
+
+```{r}
+# We can also use GEE instead of GEEPACKAGE to fit the model. 
+fit_gee2 <- gee(
+  formula = health_bin ~ baseline_bin + txt + time + agegroup,
+  id = id,
+  data = df_gee,
+  family = binomial(link = "logit"),
+  corstr = "unstructured",
+  scale.fix = TRUE
+)
+
+summary(fit_gee2)
+```
+
+
+```{r}
+coef_gee2 <- summary(fit_gee2)$coefficients
+
+tab_or_gee2 <- tibble(
+  term = rownames(coef_gee2),
+  estimate = coef_gee2[, "Estimate"],
+  se = coef_gee2[, "Robust S.E."]
+) %>%
+  mutate(
+    z = estimate / se,
+    p_value = 2 * (1 - pnorm(abs(z))),
+    OR = exp(estimate),
+    lower_95 = exp(estimate - 1.96 * se),
+    upper_95 = exp(estimate + 1.96 * se)
+  )
+
+tab_or_gee2
+```
+
+A logistic GEE model with an unstructured working correlation matrix was fitted to the follow-up observations, with self-rated health as the binary outcome and baseline health, treatment group, follow-up visit (time), and age group as predictors. Robust standard errors were used for inference.   
+
+Baseline health was a strong predictor of follow-up self-rated health. After adjustment for treatment group, follow-up visit, and age group, participants who reported good health at baseline had substantially higher odds of reporting good health during follow-up than those who reported poor health at baseline (estimate = 1.816, OR ≈ 6.15, robust z = 3.55).  
+
+Treatment group was also significantly associated with follow-up health. Participants in the intervention group had higher odds of reporting good health during follow-up than those in the control group (estimate = 2.102, OR ≈ 8.18, robust z = 3.92), after controlling for the other predictors.  
+
+There was no statistically significant evidence that self-rated health differed across follow-up visits. Relative to time = 2, the estimated odds of reporting good health were somewhat higher at time = 3 (OR ≈ 1.32) and time = 4 (OR ≈ 1.33), but neither difference was statistically significant.  
+
+Age group was partially associated with follow-up health. Compared with participants aged 15–24 years, those aged 25–34 years had significantly higher odds of reporting good health during follow-up (estimate = 1.335, OR ≈ 3.80, robust z = 2.65). Although the estimated odds were also higher for participants aged 35 years and older (OR ≈ 4.10), this effect was not statistically significant.  
 
 
 ## Get Odds Ratios
 
 ```{r}
-coef_gee <- coef(summary(fit_gee))
+coef_gee <- coef(summary(fit_gee1))
 
 tab_or_gee <- tibble(
   term = rownames(coef_gee),
